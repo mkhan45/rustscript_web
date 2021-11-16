@@ -1,0 +1,18 @@
+<html>
+    <head>
+	{{header}}
+    </head>
+
+    <body>
+	<div class="items">
+	%startloop% items
+	    <div class="card">
+		<strong> {{title}} </strong>
+		<p> {{value}} </p>
+	    </div>
+	%endloop%
+	</div>
+
+	{{footer}}
+    </body>
+</html>
