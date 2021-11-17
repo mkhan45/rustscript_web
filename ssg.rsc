@@ -57,8 +57,15 @@ let run_template(template, state) = {
 		    loop_template(xs, [inner_result | acc])
 		}
 
-	    let loop_output = loop_template(state("{{" + loop_var + "}}"), [])
-	    loop(xs, [loop_output | acc])
+	    match state("{{" + loop_var + "}}")
+		| () -> {
+		    println("Missing loop variable " + loop_var)
+		    let () = 1
+		}
+		| inner_template -> {
+		    let loop_output = loop_template(inner_template, [])
+		    loop(xs, [loop_output | acc])
+		}
 	}
 	| [(:html, html) | xs] -> {
 	    let html = html |> replace_words(_, state) |> replace_words(_, %{"%endloop%" => ""})
@@ -80,3 +87,33 @@ let template_file_string(filename, state) = filename
 let template_file(input_file, output_file, state) = input_file
     |> template_file_string(_, state)
     |> write_file(output_file, _)
+
+let gen_site(endpoints, output_dir, default_state) = {
+    let gen_endpoint = fn(endpoint, generator_state) => {
+	let (path, gen_fn) = endpoint
+	let output = gen_fn(generator_state)
+	write_file(output_dir + "/" + path, output)
+    }
+
+    # TODO: put paths from other endpoints here
+    let generator_state = default_state
+    foreach(map_to_list(endpoints), gen_endpoint(_, generator_state))
+}
+
+let endpoints = %{
+    "index.html" => fn(gen_state) => {
+	let items = [
+	    %{"title" => "Card 1", "value" => "Some stuff here"},
+	    %{"title" => "Another one", "value" => "Some more stuff here"}
+	]
+	let gen_state = %{"items" => items | gen_state}
+	template_file_string("templates/template.html", gen_state)
+    }
+}
+
+let default_state = %{
+    "header" => read_file("templates/header.html"),
+    "footer" => read_file("templates/footer.html")
+}
+
+gen_site(endpoints, "out", default_state)
