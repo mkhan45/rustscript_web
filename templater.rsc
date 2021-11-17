@@ -42,6 +42,11 @@ let parse_template(string) = {
 }
 
 let run_template(template, state) = {
+    let state = state
+	|> map_to_list
+	|> map(fn((k, v)) => ("{{" + k + "}}", v), _)
+	|> fold(%{}, fn(acc, (k, v)) => %{k => v | acc}, _)
+
     let loop = fn(template, acc) => match template
 	| [] -> acc |> reverse |> concat
 	| [(:loop, %{loop_var, inner}) | xs] -> {
@@ -52,7 +57,7 @@ let run_template(template, state) = {
 		    loop_template(xs, [inner_result | acc])
 		}
 
-	    let loop_output = loop_template(state(loop_var), [])
+	    let loop_output = loop_template(state("{{" + loop_var + "}}"), [])
 	    loop(xs, [loop_output | acc])
 	}
 	| [(:html, html) | xs] -> {
@@ -75,14 +80,3 @@ let template_file_string(filename, state) = filename
 let template_file(input_file, output_file, state) = input_file
     |> template_file_string(_, state)
     |> write_file(output_file, _)
-
-let items = [
-    %{"{{title}}" => "first title", "{{value}}" => "first value"},
-    %{"{{title}}" => "second title", "{{value}}" => "second value"},
-    %{"{{title}}" => "cookies", "{{value}}" => "better than cake"}
-]
-let header = "<title>Templated</title>"
-let footer = "footer"
-let state = %{"{{header}}" => header, "items" => items, "{{footer}}" => footer}
-
-template_file("template.html", "out.html", state)
