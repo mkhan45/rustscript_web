@@ -117,12 +117,3 @@ let gen_site(endpoints, output_dir, default_state) = {
 #}
 
 #gen_site(endpoints, "out", default_state)
-
-let exports = %{
-    parse_template: parse_template,
-    run_template: run_template,
-    template_from_file: template_from_file,
-    template_file: template_file,
-    gen_site: gen_site
-}
-exports
