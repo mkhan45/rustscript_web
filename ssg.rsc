@@ -1,50 +1,84 @@
-let strtok(s) = {
-    let whitespace = [" ", "\n", "\t"]
+let scan_template(string) = {
+    let scan_keyword(chars, acc) = match chars
+	| [] -> {
+	    println("Unmatched %")
+	    let () = 1
+	}
+	| ["%" | remaining] -> {
+	    let kw = (:keyword, acc)
+	    (kw, remaining)
+	}
+	| [ch | rest] -> {
+	    scan_keyword(rest, [ch | acc])
+	}
 
-    s 
-    |> to_charlist 
-    |> group_by(_, fn(ch) => any([ch == w for w in whitespace]))
-    |> map(concat, _)
+    let scan_substitution(chars, acc) = match chars
+	| [] -> {
+	    println("Unmatched {{")
+	    let () = 1
+	}
+	| ["}", "}" | remaining] -> {
+	    let subst = (:substitution, acc)
+	    (subst, remaining)
+	}
+	| [ch | rest] -> {
+	    scan_substitution(rest, [ch | acc])
+	}
+
+    let loop(chars, acc) = match (chars, acc)
+	| ([], _) -> {
+	    reverse(acc)
+	}
+	| (["%" | rest], _) -> {
+	    let (kw, remaining) = scan_keyword(rest, [])
+	    loop(remaining, [kw | acc])
+	}
+	| (["{", "{" | rest], _) -> {
+	    let (subst, remaining) = scan_substitution(rest, [])
+	    loop(remaining, [subst | acc])
+	}
+	| ([ch | remaining], [(:html, html_chars) | acc]) -> {
+	    let html = (:html, [ch | html_chars])
+	    loop(remaining, [html | acc])
+	}
+	| ([ch | remaining], acc) -> {
+	    let html = (:html, [ch])
+	    loop(remaining, [html | acc])
+	}
+
+    let postprocess((ty, chars)) = (ty, chars |> reverse |> concat)
+
+    string
+    |> to_charlist
+    |> loop(_, [])
+    |> map(postprocess, _)
 }
 
-let replace_words(str, replacements) = str
-    |> strtok
-    |> replace(_, replacements)
-    |> concat_sep(_, " ")
-
-let parse_template(string) = {
-    let words = string |> strtok
-
-    let loop(words, template) = match words
+let parse_template(str) = {
+    let parse(toks, acc) = match toks
 	| [] -> {
-	    (reverse(template), [])
+	    (reverse(acc), [])
 	}
-	| ["%endloop%" | remaining] -> {
-	    (reverse(template), remaining)
+	| [(:html, _) as tok | xs] | [(:substitution, _) as tok | xs] -> {
+	    parse(xs, [tok | acc])
 	}
-	| ["%startloop%", loop_var | words] -> {
-	    let (inner_template, remaining) = loop(words, [])
-	    let loop_template = (:loop, %{loop_var: loop_var, inner: inner_template})
-	    loop(remaining, [loop_template | template])
+	| [(:keyword, "endloop") | xs] -> {
+	    (reverse(acc), xs)
 	}
-	| [word | _] -> {
-	    let html_loop(words, acc) = match words
-		| [] | ["%startloop%" | _] | ["%endloop%" | _] -> (reverse(acc), words)
-		| [word | words] -> html_loop(words, [word | acc])
-
-	    let (html, remaining) = html_loop(words, [])
-	    let html = concat_sep(html, " ")
-	    let html_template = (:html, html)
-	    loop(remaining, [html_template | template])
+	| [(:keyword, "startloop"), (:html, " "), (:substitution, loop_var) | xs] -> {
+	    let (inner, remaining) = parse(xs, [])
+	    let loop = (:loop, %{inner: inner, loop_var: loop_var})
+	    parse(remaining, [loop | acc])
 	}
 
-    loop(words, [])
+    str
+    |> scan_template
+    |> parse(_, [])
 }
 
 let run_template(template, state) = {
     let state = state
 	|> map_to_list
-	|> map(fn((k, v)) => ("{{" + k + "}}", v), _)
 	|> fold(%{}, fn(acc, (k, v)) => %{k => v | acc}, _)
 
     let loop = fn(template, acc) => match template
@@ -52,12 +86,17 @@ let run_template(template, state) = {
 	| [(:loop, %{loop_var, inner}) | xs] -> {
 	    let loop_template = fn(ls, acc) => match ls
 		| [] -> acc |> reverse |> concat
-		| [inner_state | xs] -> {
+		| [inner_state | xs] when typeof(inner_state) == :dictionary -> {
+		    let inner_result = run_template(inner, inner_state)
+		    loop_template(xs, [inner_result | acc])
+		}
+		| [item | xs] -> {
+		    let inner_state = %{"item" => item}
 		    let inner_result = run_template(inner, inner_state)
 		    loop_template(xs, [inner_result | acc])
 		}
 
-	    match state("{{" + loop_var + "}}")
+	    match state(loop_var)
 		| () -> {
 		    println("Missing loop variable " + loop_var)
 		    let () = 1
@@ -67,8 +106,15 @@ let run_template(template, state) = {
 		    loop(xs, [loop_output | acc])
 		}
 	}
+	| [(:substitution, substitution) | xs] -> {
+	    match state(substitution)
+		| () -> {
+		    println("Missing variable " + substitution)
+		    let () = 1
+		}
+		| word -> loop(xs, [word | acc])
+	}
 	| [(:html, html) | xs] -> {
-	    let html = html |> replace_words(_, state) |> replace_words(_, %{"%endloop%" => ""})
 	    loop(xs, [html | acc])
 	}
 
@@ -102,18 +148,25 @@ let gen_site(endpoints, output_dir, default_state) = {
 
 #let endpoints = %{
 #    "index.html" => fn(gen_state) => {
-#	let items = [
-#	    %{"title" => "Card 1", "value" => "Some stuff here"},
-#	    %{"title" => "Another one", "value" => "Some more stuff here"}
-#	]
-#	let gen_state = %{"items" => items | gen_state}
-#	template_file_string("templates/template.html", gen_state)
+	#let items = [
+	#    %{"title" => "Card 1", "value" => "Some stuff here"},
+	#    %{"title" => "Another one", "value" => "Some more stuff here"}
+	#]
+	#let gen_state = %{"items" => items | gen_state}
+	#template_file_string("../rustscript_site/templates/resume.html", state)
 #    }
 #}
 
 #let default_state = %{
-#    "header" => read_file("templates/header.html"),
-#    "footer" => read_file("templates/footer.html")
+    #"header" => read_file("templates/header.html"),
+    #"footer" => read_file("templates/footer.html")
+#    "header" => "",
+#    "footer" => ""
 #}
 
 #gen_site(endpoints, "out", default_state)
+
+#"../rustscript_site/templates/resume.html"
+#|> read_file
+#|> parse_template
+#|> inspect
