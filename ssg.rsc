@@ -100,20 +100,29 @@ let gen_site(endpoints, output_dir, default_state) = {
     foreach(map_to_list(endpoints), gen_endpoint(_, generator_state))
 }
 
-let endpoints = %{
-    "index.html" => fn(gen_state) => {
-	let items = [
-	    %{"title" => "Card 1", "value" => "Some stuff here"},
-	    %{"title" => "Another one", "value" => "Some more stuff here"}
-	]
-	let gen_state = %{"items" => items | gen_state}
-	template_file_string("templates/template.html", gen_state)
-    }
-}
+#let endpoints = %{
+#    "index.html" => fn(gen_state) => {
+#	let items = [
+#	    %{"title" => "Card 1", "value" => "Some stuff here"},
+#	    %{"title" => "Another one", "value" => "Some more stuff here"}
+#	]
+#	let gen_state = %{"items" => items | gen_state}
+#	template_file_string("templates/template.html", gen_state)
+#    }
+#}
 
-let default_state = %{
-    "header" => read_file("templates/header.html"),
-    "footer" => read_file("templates/footer.html")
-}
+#let default_state = %{
+#    "header" => read_file("templates/header.html"),
+#    "footer" => read_file("templates/footer.html")
+#}
 
-gen_site(endpoints, "out", default_state)
+#gen_site(endpoints, "out", default_state)
+
+let exports = %{
+    parse_template: parse_template,
+    run_template: run_template,
+    template_from_file: template_from_file,
+    template_file: template_file,
+    gen_site: gen_site
+}
+exports
