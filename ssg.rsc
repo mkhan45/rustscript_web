@@ -87,6 +87,7 @@ let run_template(template, state) = {
 	    let loop_template = fn(ls, acc) => match ls
 		| [] -> acc |> reverse |> concat
 		| [inner_state | xs] when typeof(inner_state) == :dictionary -> {
+		    let inner_state = merge_maps(inner_state, state)
 		    let inner_result = run_template(inner, inner_state)
 		    loop_template(xs, [inner_result | acc])
 		}
@@ -135,15 +136,19 @@ let template_file(input_file, output_file, state) = input_file
     |> write_file(output_file, _)
 
 let gen_site(endpoints, output_dir, default_state) = {
+    let endpoints = map_to_list(endpoints)
+
     let gen_endpoint = fn(endpoint, generator_state) => {
-	let (path, gen_fn) = endpoint
+	let ((path, _), gen_fn) = endpoint
 	let output = gen_fn(generator_state)
 	write_file(output_dir + "/" + path, output)
     }
 
     # TODO: put paths from other endpoints here
-    let generator_state = default_state
-    foreach(map_to_list(endpoints), gen_endpoint(_, generator_state))
+    let generator_state =
+	fold(default_state, fn(acc, ((path, route), _)) => %{(route + "_route") => path | acc}, endpoints)
+
+    foreach(endpoints, gen_endpoint(_, generator_state))
 }
 
 #let endpoints = %{
