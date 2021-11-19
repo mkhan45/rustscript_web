@@ -62,13 +62,23 @@ let parse_template(str) = {
 	| [(:html, _) as tok | xs] | [(:substitution, _) as tok | xs] -> {
 	    parse(xs, [tok | acc])
 	}
-	| [(:keyword, "endloop") | xs] -> {
+	| [(:keyword, "end") | xs] -> {
 	    (reverse(acc), xs)
 	}
 	| [(:keyword, "startloop"), (:html, " "), (:substitution, loop_var) | xs] -> {
 	    let (inner, remaining) = parse(xs, [])
 	    let loop = (:loop, %{inner: inner, loop_var: loop_var})
 	    parse(remaining, [loop | acc])
+	}
+	| [(:keyword, "if"), (:html, " "), (:substitution, cond_var) | xs] -> {
+	    let (inner, remaining) = parse(xs, [])
+	    let if_stmt = (:if_stmt, %{inner: inner, cond: cond_var})
+	    parse(remaining, [if_stmt | acc])
+	}
+	| [(:keyword, "ifnot"), (:html, " "), (:substitution, cond_var) | xs] -> {
+	    let (inner, remaining) = parse(xs, [])
+	    let ifnot_stmt = (:ifnot_stmt, %{inner: inner, cond: cond_var})
+	    parse(remaining, [ifnot_stmt | acc])
 	}
 
     str
@@ -84,17 +94,17 @@ let run_template(template, state) = {
     let loop = fn(template, acc) => match template
 	| [] -> acc |> reverse |> concat
 	| [(:loop, %{loop_var, inner}) | xs] -> {
-	    let loop_template = fn(ls, acc) => match ls
+	    let template_loop = fn(ls, acc) => match ls
 		| [] -> acc |> reverse |> concat
 		| [inner_state | xs] when typeof(inner_state) == :dictionary -> {
 		    let inner_state = merge_maps(inner_state, state)
 		    let inner_result = run_template(inner, inner_state)
-		    loop_template(xs, [inner_result | acc])
+		    template_loop(xs, [inner_result | acc])
 		}
 		| [item | xs] -> {
 		    let inner_state = %{"item" => item}
 		    let inner_result = run_template(inner, inner_state)
-		    loop_template(xs, [inner_result | acc])
+		    template_loop(xs, [inner_result | acc])
 		}
 
 	    match state(loop_var)
@@ -103,9 +113,25 @@ let run_template(template, state) = {
 		    let () = 1
 		}
 		| inner_template -> {
-		    let loop_output = loop_template(inner_template, [])
+		    let loop_output = template_loop(inner_template, [])
 		    loop(xs, [loop_output | acc])
 		}
+	}
+	| [(:if_stmt, %{cond, inner}) | xs] -> {
+	    match state(cond)
+		| () -> loop(xs, acc)
+		| _ -> {
+		    let if_output = run_template(inner, state)
+		    loop(xs, [if_output | acc])
+		}
+	}
+	| [(:ifnot_stmt, %{cond, inner}) | xs] -> {
+	    match state(cond)
+		| () -> {
+		    let ifnot_output = run_template(inner, state)
+		    loop(xs, [ifnot_output | acc])
+		}
+		| _ -> loop(xs, acc)
 	}
 	| [(:substitution, substitution) | xs] -> {
 	    match state(substitution)
