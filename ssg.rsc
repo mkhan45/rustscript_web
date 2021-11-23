@@ -1,3 +1,19 @@
+let remove_suffix(str, suffix) = {
+    let chars = to_charlist(str)
+    let strlen = length(chars)
+    let suffix_len = length(suffix |> to_charlist)
+
+    if strlen > suffix_len then {
+	let (start, end) = split_at(strlen - suffix_len, chars)
+
+	if concat(end) == suffix 
+	    then concat(start) 
+	    else str
+    } else  {
+	str
+    }
+}
+
 let scan_template(string) = {
     let scan_keyword(chars, acc) = match chars
 	| [] -> {
@@ -194,12 +210,12 @@ let parse_route(str) = {
 	    }
 	}
 
-    let segments = str |> to_charlist |> split(_, "/") |> map(concat, _)
+    let segments = str |> to_charlist |> split(_, "/") |> map(concat, _) |> map(remove_suffix(_, ".html"), _)
     loop(segments, [])
 }
 
 let bind_route(route, str) = {
-    let segments = str |> to_charlist |> split(_, "/") |> map(concat, _)
+    let segments = str |> to_charlist |> split(_, "/") |> map(concat, _) |> map(remove_suffix(_, ".html"), _)
     
     let loop(route, segments, state) = match (route, segments)
 	| ([(:path, p) | route], [s | segments]) when s == p ->
