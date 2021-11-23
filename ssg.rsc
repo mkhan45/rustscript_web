@@ -80,6 +80,12 @@ let parse_template(str) = {
 	    let ifnot_stmt = (:ifnot_stmt, %{inner: inner, cond: cond_var})
 	    parse(remaining, [ifnot_stmt | acc])
 	}
+	| [(:keyword, "path"), (:html, " "), (:substitution, path_name) | xs] -> {
+	    parse(xs, [(:path, path_name) | acc])
+	}
+	| [(:keyword, "include"), (:html, " "), (:substitution, template) | xs] -> {
+	    parse(xs, [(:include, template) | acc])
+	}
 
     str
     |> scan_template
@@ -139,7 +145,17 @@ let run_template(template, state) = {
 		    println("Missing variable " + substitution)
 		    let () = 1
 		}
-		| word -> loop(xs, [word | acc])
+		| word -> {
+		    loop(xs, [word | acc])
+		}
+	}
+	| [(:path, path) | xs] -> {
+	    let base_route = state(:base_route)
+	    loop(xs, [base_route + path | acc])
+	}
+	| [(:include, template) | xs] -> {
+	    let templated = template_file_string(template, state)
+	    loop(xs, [templated | acc])
 	}
 	| [(:html, html) | xs] -> {
 	    loop(xs, [html | acc])
@@ -161,20 +177,71 @@ let template_file(input_file, output_file, state) = input_file
     |> template_file_string(_, state)
     |> write_file(output_file, _)
 
-let gen_site(endpoints, output_dir, default_state) = {
-    let endpoints = map_to_list(endpoints)
+let parse_route(str) = {
+    let loop(segments, acc) = match segments
+	| [] ->
+	    reverse(acc)
+	| [s | segments] -> {
+	    let ls = to_charlist(s)
+	    let first_two = take(2, ls) |> concat
+	    let last_two = drop(length(ls) - 2, ls) |> concat
 
-    let gen_endpoint = fn(endpoint, generator_state) => {
-	let ((path, _), gen_fn) = endpoint
-	let output = gen_fn(generator_state)
-	write_file(output_dir + "/" + path, output)
+	    if (first_two == "{{") && (last_two == "}}") then {
+		let var_name = slice(ls, 2, length(ls) - 2) |> concat
+		loop(segments, [(:var, var_name) | acc])
+	    } else {
+		loop(segments, [(:path, s) | acc])
+	    }
+	}
+
+    let segments = str |> to_charlist |> split(_, "/") |> map(concat, _)
+    loop(segments, [])
+}
+
+let bind_route(route, str) = {
+    let segments = str |> to_charlist |> split(_, "/") |> map(concat, _)
+    
+    let loop(route, segments, state) = match (route, segments)
+	| ([(:path, p) | route], [s | segments]) when s == p ->
+	    loop(route, segments, state)
+	| ([(:var, v) | route], [s | segments]) ->
+	    loop(route, segments, %{v => s | state})
+	| ([], []) ->
+	    (:some, state)
+	| _ ->
+	    :none
+    
+    loop(route, segments, %{})
+}
+
+let gen_site(base_route, endpoints, pages, output_dir, default_state) = {
+    let endpoints = endpoints 
+	|> map_to_list 
+	|> map(fn((route, gen_fn)) => (parse_route(route), gen_fn), _)
+
+    let gen_page = fn(page, generator_state) => {
+	let loop = fn(endpoints) => match endpoints
+	    | [(route, gen_fn) | endpoints] -> {
+		match bind_route(route, page)
+		    | (:some, bindings) -> {
+			let state = merge_maps(bindings, generator_state)
+			let output = gen_fn(state)
+			write_file(output_dir + "/" + page, output)
+		    }
+		    | :none -> {
+			loop(endpoints)
+		    }
+	    }
+	    | [] -> {
+		println("No endpoints matched " + page)
+		let () = 1
+	    }
+	loop(endpoints)
     }
 
-    # TODO: put paths from other endpoints here
-    let generator_state =
-	fold(default_state, fn(acc, ((path, route), _)) => %{(route + "_route") => path | acc}, endpoints)
+    let generator_state = %{base_route: base_route | default_state}
 
-    foreach(endpoints, gen_endpoint(_, generator_state))
+    foreach(pages, gen_page(_, generator_state))
 }
 
 #let endpoints = %{
