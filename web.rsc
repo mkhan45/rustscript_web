@@ -260,27 +260,42 @@ let gen_site(base_route, endpoints, pages, output_dir, default_state) = {
     foreach(pages, gen_page(_, generator_state))
 }
 
-#let endpoints = %{
-#    "index.html" => fn(gen_state) => {
-	#let items = [
-	#    %{"title" => "Card 1", "value" => "Some stuff here"},
-	#    %{"title" => "Another one", "value" => "Some more stuff here"}
-	#]
-	#let gen_state = %{"items" => items | gen_state}
-	#template_file_string("../rustscript_site/templates/resume.html", state)
-#    }
-#}
+let serve_endpoints(mode, port, default_state, endpoints) = {
+    let endpoints = endpoints 
+	|> map_to_list 
+	|> map(fn((route, gen_fn)) => (parse_route(route), gen_fn), _)
 
-#let default_state = %{
-    #"header" => read_file("templates/header.html"),
-    #"footer" => read_file("templates/footer.html")
-#    "header" => "",
-#    "footer" => ""
-#}
+    let serve_callback = fn(uri, method, headers, body) => {
+	let uri = uri 
+	    |> to_charlist 
+	    |> split(_, "/")
+	    |> drop(2, _) 
+	    |> map(concat, _)
+	    |> concat_sep(_, "/")
+	    |> add("/", _)
 
-#gen_site(endpoints, "out", default_state)
+	let loop = fn(endpoints) => match endpoints
+	    | [(route, gen_fn) | endpoints] -> {
+		match bind_route(route, uri)
+		    | (:some, bindings) -> {
+			let state = 
+			    %{base_route: "/", uri: uri, method: method, headers: headers, body: body | bindings}
+			    |> merge_maps(_, default_state)
+			gen_fn(state)
+		    }
+		    | :none -> {
+			loop(endpoints)
+		    }
+	    }
+	    | [] -> {
+		println("No endpoints matched " + uri)
+		let () = 1
+	    }
 
-#"../rustscript_site/templates/resume.html"
-#|> read_file
-#|> parse_template
-#|> inspect
+	loop(endpoints)
+    }
+
+    match mode
+	| (:ssl, cert_path, key_path) -> start_server_ssl(cert_path, key_path, port, serve_callback)
+	| :tls -> start_server(port, serve_callback)
+}
