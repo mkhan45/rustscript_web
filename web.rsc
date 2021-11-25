@@ -210,8 +210,12 @@ let parse_route(str) = {
 	    }
 	}
 
-    let segments = str |> to_charlist |> split(_, "/") |> map(concat, _) |> map(remove_suffix(_, ".html"), _)
-    loop(segments, [])
+    if str == "*" then {
+	:wildcard
+    } else {
+	let segments = str |> to_charlist |> split(_, "/") |> map(concat, _) |> map(remove_suffix(_, ".html"), _)
+	loop(segments, [])
+    }
 }
 
 let bind_route(route, str) = {
@@ -223,6 +227,8 @@ let bind_route(route, str) = {
 	| ([(:var, v) | route], [s | segments]) ->
 	    loop(route, segments, %{v => s | state})
 	| ([], []) ->
+	    (:some, state)
+	| (:wildcard, _) ->
 	    (:some, state)
 	| _ ->
 	    :none
@@ -272,7 +278,6 @@ let serve_endpoints(mode, port, default_state, endpoints) = {
 	    |> drop(2, _) 
 	    |> map(concat, _)
 	    |> concat_sep(_, "/")
-	    |> add("/", _)
 
 	let loop = fn(endpoints) => match endpoints
 	    | [(route, gen_fn) | endpoints] -> {
