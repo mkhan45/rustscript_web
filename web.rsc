@@ -278,6 +278,7 @@ let serve_endpoints(mode, port, default_state, endpoints) = {
 	    |> drop(2, _) 
 	    |> map(concat, _)
 	    |> concat_sep(_, "/")
+	    |> replace_substr(_, "%20", " ")
 
 	let loop = fn(endpoints) => match endpoints
 	    | [(route, gen_fn) | endpoints] -> {
