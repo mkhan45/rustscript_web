@@ -197,6 +197,8 @@ let parse_route(str) = {
     let loop(segments, acc) = match segments
 	| [] ->
 	    reverse(acc)
+	| ["*"] ->
+	    reverse([:wildcard | acc])
 	| [s | segments] -> {
 	    let ls = to_charlist(s)
 	    let first_two = take(2, ls) |> concat
@@ -210,12 +212,8 @@ let parse_route(str) = {
 	    }
 	}
 
-    if str == "*" then {
-	:wildcard
-    } else {
-	let segments = str |> to_charlist |> split(_, "/") |> map(concat, _) |> map(remove_suffix(_, ".html"), _)
-	loop(segments, [])
-    }
+    let segments = str |> to_charlist |> split(_, "/") |> map(concat, _) |> map(remove_suffix(_, ".html"), _)
+    loop(segments, [])
 }
 
 let bind_route(route, str) = {
@@ -228,7 +226,7 @@ let bind_route(route, str) = {
 	    loop(route, segments, %{v => s | state})
 	| ([], []) ->
 	    (:some, state)
-	| (:wildcard, _) ->
+	| ([:wildcard], _) ->
 	    (:some, state)
 	| _ ->
 	    :none
