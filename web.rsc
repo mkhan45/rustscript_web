@@ -264,12 +264,12 @@ let gen_site(base_route, endpoints, pages, output_dir, default_state) = {
     foreach(pages, gen_page(_, generator_state))
 }
 
-let serve_endpoints(mode, port, default_state, endpoints) = {
+let serve_endpoints(mode, port, default_state, server_state, endpoints) = {
     let endpoints = endpoints 
 	|> map_to_list 
 	|> map(fn((route, gen_fn)) => (parse_route(route), gen_fn), _)
 
-    let serve_callback = fn(uri, method, headers, body) => {
+    let serve_callback = fn(uri, method, headers, body, server_state) => {
 	let uri = uri 
 	    |> to_charlist 
 	    |> split(_, "/")
@@ -285,7 +285,7 @@ let serve_endpoints(mode, port, default_state, endpoints) = {
 			let state = 
 			    %{base_route: "/", uri: uri, method: method, headers: headers, body: body | bindings}
 			    |> merge_maps(_, default_state)
-			gen_fn(state)
+			gen_fn(state, server_state)
 		    }
 		    | :none -> {
 			loop(endpoints)
@@ -300,6 +300,6 @@ let serve_endpoints(mode, port, default_state, endpoints) = {
     }
 
     match mode
-	| (:ssl, cert_path, key_path) -> start_server_ssl(cert_path, key_path, port, serve_callback)
-	| :tls -> start_server(port, serve_callback)
+	| (:ssl, cert_path, key_path) -> start_server_ssl(cert_path, key_path, port, serve_callback, server_state)
+	| :tls -> start_server(port, serve_callback, server_state)
 }
