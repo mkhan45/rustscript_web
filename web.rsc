@@ -8,7 +8,7 @@ let parse_urlencoded(uri) = {
     let is_pair = fn(p) => if let [_, _] = p then T else F
 
     if all([is_pair(p) for p in pairs]) then
-	(:ok, fold(%{}, fn(acc, [k, v]) => %{k => v | acc}, _))
+	(:ok, fold(%{}, fn(acc, [k, v]) => %{k => v | acc}, pairs))
     else
 	:err
 }
