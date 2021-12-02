@@ -1,3 +1,10 @@
+let parse_urlencoded(uri) = uri 
+	|> to_charlist 
+	|> split(_, "&") 
+	|> map(split(_, "="), _) 
+	|> map(fn(pair) => map(concat, pair), _)
+	|> fold(%{}, fn(acc, [k, v]) => %{k => v | acc}, _)
+
 let remove_suffix(str, suffix) = {
     let chars = to_charlist(str)
     let strlen = length(chars)
@@ -193,7 +200,7 @@ let template_file(input_file, output_file, state) = input_file
     |> template_file_string(_, state)
     |> write_file(output_file, _)
 
-let parse_route(str) = {
+let parse_route(route_str) = {
     let loop(segments, acc) = match segments
 	| [] ->
 	    reverse(acc)
@@ -212,37 +219,45 @@ let parse_route(str) = {
 	    }
 	}
 
-    let segments = str |> to_charlist |> split(_, "/") |> map(concat, _) |> map(remove_suffix(_, ".html"), _)
-    loop(segments, [])
+    let (method, uri) = match route_str
+	| (method, uri) -> route_str
+	| uri -> (:get, uri)
+
+    let segments = uri |> to_charlist |> split(_, "/") |> map(concat, _) |> map(remove_suffix(_, ".html"), _)
+    (method, loop(segments, []))
 }
 
-let bind_route(route, str) = {
-    let segments = str |> to_charlist |> split(_, "/") |> map(concat, _) |> map(remove_suffix(_, ".html"), _)
-    
-    let loop(route, segments, state) = match (route, segments)
-	| ([(:path, p) | route], [s | segments]) when s == p ->
-	    loop(route, segments, state)
-	| ([(:var, v) | route], [s | segments]) ->
-	    loop(route, segments, %{v => s | state})
-	| ([], []) ->
-	    (:some, state)
-	| ([:wildcard], _) ->
-	    (:some, state)
-	| _ ->
-	    :none
-    
-    loop(route, segments, %{})
+let bind_route((route_method, route), str, req_method) = {
+    if (route_method != :any) && (route_method != req_method) then
+	:none
+    else {
+	let segments = str |> to_charlist |> split(_, "/") |> map(concat, _) |> map(remove_suffix(_, ".html"), _)
+	
+	let loop(route, segments, state) = match (route, segments)
+	    | ([(:path, p) | route], [s | segments]) when s == p ->
+		loop(route, segments, state)
+	    | ([(:var, v) | route], [s | segments]) ->
+		loop(route, segments, %{v => s | state})
+	    | ([], []) ->
+		(:some, state)
+	    | ([:wildcard], _) ->
+		(:some, state)
+	    | _ ->
+		:none
+	
+	loop(route, segments, %{})
+    }
 }
 
 let gen_site(base_route, endpoints, pages, output_dir, default_state) = {
     let endpoints = endpoints 
 	|> map_to_list 
-	|> map(fn((route, gen_fn)) => (parse_route(route), gen_fn), _)
+	|> map(fn((route, gen_fn)) => (parse_route((:get, route)), gen_fn), _)
 
     let gen_page = fn(page, generator_state) => {
 	let loop = fn(endpoints) => match endpoints
-	    | [(route, gen_fn) | endpoints] -> {
-		match bind_route(route, page)
+	    | [((_, route), gen_fn) | endpoints] -> {
+		match bind_route(route, page, :get)
 		    | (:some, bindings) -> {
 			let state = merge_maps(bindings, generator_state)
 			let output = gen_fn(state)
@@ -268,7 +283,7 @@ let is_path(seg) = match seg
     | (:path, _) -> T
     | _ -> F
 
-let route_specificity(route) = route |> filter(is_path, _) |> length
+let route_specificity((method, route)) = route |> filter(is_path, _) |> length
 
 let serve_endpoints(mode, port, default_state, server_state, endpoints) = {
     let endpoints = endpoints 
@@ -276,7 +291,11 @@ let serve_endpoints(mode, port, default_state, server_state, endpoints) = {
 	|> map(fn((route, gen_fn)) => (parse_route(route), gen_fn), _)
 	|> sort(_, fn((a, _), (b, _)) => route_specificity(b) - route_specificity(a))
 
-    let serve_callback = fn(uri, method, headers, body, server_state) => {
+    let serve_callback = fn(uri, req_method, headers, body, server_state) => {
+	let req_method = match req_method
+	    | "GET" -> :get
+	    | "POST" -> :post
+
 	let uri = uri 
 	    |> to_charlist 
 	    |> split(_, "/")
@@ -287,10 +306,10 @@ let serve_endpoints(mode, port, default_state, server_state, endpoints) = {
 
 	let loop = fn(endpoints) => match endpoints
 	    | [(route, gen_fn) | endpoints] -> {
-		match bind_route(route, uri)
+		match bind_route(route, uri, req_method)
 		    | (:some, bindings) -> {
 			let state = 
-			    %{base_route: "/", uri: uri, method: method, headers: headers, body: body | bindings}
+			    %{base_route: "/", uri: uri, method: req_method, headers: headers, body: body | bindings}
 			    |> merge_maps(_, default_state)
 			gen_fn(state, server_state)
 		    }
