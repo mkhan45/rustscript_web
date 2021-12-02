@@ -283,7 +283,9 @@ let is_path(seg) = match seg
     | (:path, _) -> T
     | _ -> F
 
-let route_specificity((method, route)) = route |> filter(is_path, _) |> length
+let route_specificity((method, route)) = match route
+    | [] -> 1
+    | _ -> route |> filter(is_path, _) |> length
 
 let serve_endpoints(mode, port, default_state, server_state, endpoints) = {
     let endpoints = endpoints 
