@@ -264,10 +264,17 @@ let gen_site(base_route, endpoints, pages, output_dir, default_state) = {
     foreach(pages, gen_page(_, generator_state))
 }
 
+let is_path(seg) = match seg
+    | (:path, _) -> T
+    | _ -> F
+
+let route_specificity(route) = route |> filter(is_path, _) |> length
+
 let serve_endpoints(mode, port, default_state, server_state, endpoints) = {
     let endpoints = endpoints 
 	|> map_to_list 
 	|> map(fn((route, gen_fn)) => (parse_route(route), gen_fn), _)
+	|> sort(_, fn((a, _), (b, _)) => route_specificity(b) - route_specificity(a))
 
     let serve_callback = fn(uri, method, headers, body, server_state) => {
 	let uri = uri 
