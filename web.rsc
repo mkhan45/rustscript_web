@@ -1,9 +1,17 @@
-let parse_urlencoded(uri) = uri 
+let parse_urlencoded(uri) = {
+    let pairs = uri 
 	|> to_charlist 
 	|> split(_, "&") 
 	|> map(split(_, "="), _) 
 	|> map(fn(pair) => map(concat, pair), _)
-	|> fold(%{}, fn(acc, [k, v]) => %{k => v | acc}, _)
+
+    let is_pair = fn(p) => if let [_, _] = p then T else F
+
+    if all([is_pair(p) for p in pairs]) then
+	(:ok, fold(%{}, fn(acc, [k, v]) => %{k => v | acc}, _))
+    else
+	:err
+}
 
 let remove_suffix(str, suffix) = {
     let chars = to_charlist(str)
