@@ -305,6 +305,13 @@ let serve_endpoints(mode, port, default_state, server_state, endpoints) = {
 	let req_method = match req_method
 	    | "GET" -> :get
 	    | "POST" -> :post
+	    | "PUT" -> :put
+	    | "DELETE" -> :delete
+	    | "CONNECT" -> :connect
+	    | "OPTIONS" -> :options
+	    | "TRACE" -> :trace
+	    | "PATCH" -> :patch
+	    | _ -> :unknown
 
 	let uri = uri 
 	    |> to_charlist 
