@@ -261,11 +261,12 @@ let gen_site(base_route, endpoints, pages, output_dir, default_state) = {
     let endpoints = endpoints 
 	|> map_to_list 
 	|> map(fn((route, gen_fn)) => (parse_route((:get, route)), gen_fn), _)
+	|> sort_by_specificity
 
     let gen_page = fn(page, generator_state) => {
 	let loop = fn(endpoints) => match endpoints
 	    | [((_, route), gen_fn) | endpoints] -> {
-		match bind_route(route, page, :get)
+		match bind_route((:get, route), page, :get)
 		    | (:some, bindings) -> {
 			let state = merge_maps(bindings, generator_state)
 			let output = gen_fn(state)
@@ -291,15 +292,17 @@ let is_path(seg) = match seg
     | (:path, _) -> T
     | _ -> F
 
-let route_specificity((method, route)) = match route
+let route_specificity(((method, route), callback)) = match route
     | [] -> 1
     | _ -> route |> filter(is_path, _) |> length
+
+let sort_by_specificity(ls) = sort(ls, fn(a, b) => op_cmp(route_specificity(b), route_specificity(a)))
 
 let serve_endpoints(mode, port, default_state, server_state, endpoints) = {
     let endpoints = endpoints 
 	|> map_to_list 
 	|> map(fn((route, gen_fn)) => (parse_route(route), gen_fn), _)
-	|> sort(_, fn((a, _), (b, _)) => route_specificity(b) - route_specificity(a))
+	|> sort_by_specificity
 
     let serve_callback = fn(uri, req_method, headers, body, server_state) => {
 	let req_method = match req_method
